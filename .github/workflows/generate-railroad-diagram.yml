@@ -86,26 +86,27 @@ jobs:
           curl -sf -o grammar/SysMLv2Parser.g4 \
             "https://raw.githubusercontent.com/antlr/grammars-v4/${{ steps.current.outputs.sha }}/sysml-v2/SysMLv2Parser.g4"
 
-      - name: Railroad-Diagramm erzeugen
+      - name: Grammatik zusammenführen und Railroad-Diagramm erzeugen
         if: steps.compare.outputs.changed == 'true'
         run: |
           cd grammar
           mkdir -p ../site
-          java -jar ../tools/ebnf-convert.war SysMLv2Parser.g4 > parser.ebnf
-          java -jar ../tools/ebnf-convert.war SysMLv2Lexer.g4 > lexer.ebnf
-          java -jar ../tools/rr.war -html -out:../site/parser.html parser.ebnf
-          java -jar ../tools/rr.war -html -out:../site/lexer.html lexer.ebnf
+
+          # Grammatik-Header entfernen, damit aus Lexer- und Parser-Datei eine
+          # kombinierte ANTLR4-Grammatik wird (Regel-Referenzen bleiben dadurch verlinkt)
+          sed -i -E '/^(lexer |parser )?grammar [A-Za-z0-9_]+;$/d' SysMLv2Parser.g4
+          sed -i -E '/^(lexer |parser )?grammar [A-Za-z0-9_]+;$/d' SysMLv2Lexer.g4
+          # der tokenVocab-Options-Block ist in einer kombinierten Grammatik überflüssig
+          perl -0777 -pi -e 's/options\s*\{[^}]*\}//s' SysMLv2Parser.g4
+
           {
-            printf '%s\n' '<!doctype html>'
-            printf '%s\n' '<html><head><meta charset="utf-8"><title>SysML v2 Grammar Railroad Diagrams</title></head>'
-            printf '%s\n' '<body>'
-            printf '%s\n' '<h1>SysML v2 Grammar Railroad Diagrams</h1>'
-            printf '%s\n' '<ul>'
-            printf '%s\n' '  <li><a href="parser.html">Parser-Regeln</a></li>'
-            printf '%s\n' '  <li><a href="lexer.html">Lexer-Regeln</a></li>'
-            printf '%s\n' '</ul>'
-            printf '%s\n' '</body></html>'
-          } > ../site/index.html
+            echo 'grammar SysMLv2;'
+            cat SysMLv2Parser.g4
+            cat SysMLv2Lexer.g4
+          } > SysMLv2Combined.g4
+
+          java -jar ../tools/ebnf-convert.war SysMLv2Combined.g4 > combined.ebnf
+          java -jar ../tools/rr.war -html -out:../site/index.html combined.ebnf
 
       - name: Stand des Commits mitschreiben
         if: steps.compare.outputs.changed == 'true'
