@@ -109,14 +109,14 @@ jobs:
           } > SysMLv2Combined.g4
 
           java -jar ../tools/ebnf-convert.war SysMLv2Combined.g4 > combined.ebnf
-          java -jar ../tools/rr.war -html -suppressebnf -color:#7B83DF -out:"../site/SysML2-textual notation.html" combined.ebnf
+          java -jar ../tools/rr.war -html -suppressebnf -color:#7B83DF -out:"../site/SysML 2 - textual notation.html" combined.ebnf
 
       - name: Datum der Quelldatei oben rechts einfügen
         if: steps.compare.outputs.changed == 'true'
         run: |
           readable_date=$(LC_TIME=C date -u -d "${{ steps.current.outputs.date }}" +"%B %Y")
           info="<div style=\"text-align:right;margin-bottom:1em;font-family:sans-serif;font-size:0.85em;color:#666;\">Status: ${readable_date}</div>"
-          sed -i "0,/<body[^>]*>/s##&${info}#" "site/SysML 2 - textual notation.html"
+          sed -i "0,/<body[^>]*>/s||&${info}|" "site/SysML 2 - textual notation.html"
 
       - name: last_sha.txt aktualisieren und committen
         if: steps.compare.outputs.changed == 'true'
