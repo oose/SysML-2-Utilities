@@ -126,15 +126,17 @@ jobs:
           mkdir -p ../site
           java -jar ../tools/ebnf-convert.war KerML.g4 > kerml.ebnf
           java -jar ../tools/ebnf-convert.war SysML.g4 > sysml.ebnf
-          java -jar ../tools/rr.war -html -suppressebnf -color:#7B83DF -out:"../site/KerML - textual notation.html" kerml.ebnf
+          java -jar ../tools/rr.war -html -suppressebnf -out:"../site/KerML 1 - textual notation.html" kerml.ebnf
           java -jar ../tools/rr.war -html -suppressebnf -color:#7B83DF -out:"../site/SysML 2 - textual notation.html" sysml.ebnf
+          sed -i "0,/<title>[^<]*<\/title>/s##<title>KerML</title>#" "../site/KerML 1 - textual notation.html"
+          sed -i "0,/<title>[^<]*<\/title>/s##<title>SysML</title>#" "../site/SysML 2 - textual notation.html"
 
       - name: Datum oben rechts einfügen
         if: steps.compare.outputs.changed == 'true'
         run: |
           readable_date=$(LC_TIME=C date -u -d "${{ steps.spec_date.outputs.date }}" +"%B %Y")
           info="<div style=\"text-align:right;margin-bottom:1em;font-family:sans-serif;font-size:0.85em;color:#666;\">Status: ${readable_date}</div>"
-          sed -i "0,/<body[^>]*>/s||&${info}|" "site/KerML - textual notation.html"
+          sed -i "0,/<body[^>]*>/s||&${info}|" "site/KerML 1 - textual notation.html"
           sed -i "0,/<body[^>]*>/s||&${info}|" "site/SysML 2 - textual notation.html"
 
       - name: last_spec_hash.txt aktualisieren und committen
