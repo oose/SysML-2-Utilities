@@ -1,4 +1,4 @@
-# SysML-2-Utilities
+# SysML 2 Utilities
 
 ## Railroad diagrams of the grammar (updated every week)
 
