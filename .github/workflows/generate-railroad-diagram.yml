@@ -29,13 +29,16 @@ jobs:
       - name: Aktuellen Commit der Grammatik abfragen
         id: current
         run: |
-          sha=$(curl -s "https://api.github.com/repos/antlr/grammars-v4/commits?path=sysml-v2&sha=master&per_page=1" | jq -r '.[0].sha')
+          response=$(curl -s "https://api.github.com/repos/antlr/grammars-v4/commits?path=sysml-v2&sha=master&per_page=1")
+          sha=$(echo "$response" | jq -r '.[0].sha')
+          date=$(echo "$response" | jq -r '.[0].commit.committer.date')
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "date=$date" >> "$GITHUB_OUTPUT"
 
       - name: Vergleichen
         id: compare
         run: |
-          if [ "${{ steps.current.outputs.sha }}" != "${{ steps.last.outputs.sha }}" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ steps.current.outputs.sha }}" != "${{ steps.last.outputs.sha }}" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -106,13 +109,14 @@ jobs:
           } > SysMLv2Combined.g4
 
           java -jar ../tools/ebnf-convert.war SysMLv2Combined.g4 > combined.ebnf
-          java -jar ../tools/rr.war -html -out:"../site/SysML2-textual notation.html" combined.ebnf
+          java -jar ../tools/rr.war -html -suppressebnf -color:#7B83DF -out:"../site/SysML2-textual notation.html" combined.ebnf
 
-      - name: Stand des Commits mitschreiben
+      - name: Datum der Quelldatei oben rechts einfügen
         if: steps.compare.outputs.changed == 'true'
         run: |
-          info="<p>Grammatik-Commit: ${{ steps.current.outputs.sha }}<br>Erzeugt am: $(date -u +%Y-%m-%dT%H:%M:%SZ)</p>"
-          sed -i "s#</body>#${info}</body>#" "site/SysML2-textual notation.html"
+          readable_date=$(LC_TIME=C date -u -d "${{ steps.current.outputs.date }}" +"%B %Y")
+          info="<div style=\"text-align:right;margin-bottom:1em;font-family:sans-serif;font-size:0.85em;color:#666;\">Status: ${readable_date}</div>"
+          sed -i "0,/<body[^>]*>/s##&${info}#" "site/SysML2-textual notation.html"
 
       - name: last_sha.txt aktualisieren und committen
         if: steps.compare.outputs.changed == 'true'
@@ -121,7 +125,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add last_sha.txt
-          git commit -m "Update SysML v2 grammar snapshot to ${{ steps.current.outputs.sha }}"
+          git diff --staged --quiet || git commit -m "Update SysML v2 grammar snapshot to ${{ steps.current.outputs.sha }}"
           git push
 
       - name: Pages vorbereiten
