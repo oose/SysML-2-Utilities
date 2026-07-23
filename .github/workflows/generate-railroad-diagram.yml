@@ -2,7 +2,7 @@ name: sysml-railroad-diagram
 
 on:
   schedule:
-    - cron: '0 6 * * 1'   # täglich 06:00 UTC
+    - cron: '0 6 * * 1'   # wöchentlich, montags 06:00 UTC
   workflow_dispatch:        # manuelles Auslösen zum Testen
 
 permissions:
@@ -82,15 +82,26 @@ jobs:
         if: steps.compare.outputs.changed == 'true'
         run: |
           cd grammar
-          java -jar ../tools/rrd-antlr4.jar SysMLv2Parser.g4 SysMLv2Lexer.g4
           mkdir -p ../site
-          cp -r output/SysMLv2Parser/* ../site/
+          java -jar ../tools/rrd-antlr4.jar --out ../site/parser.html SysMLv2Parser.g4
+          java -jar ../tools/rrd-antlr4.jar --out ../site/lexer.html SysMLv2Lexer.g4
+          cat > ../site/index.html <<'EOF'
+          <!doctype html>
+          <html><head><meta charset="utf-8"><title>SysML v2 Grammar Railroad Diagrams</title></head>
+          <body>
+          <h1>SysML v2 Grammar Railroad Diagrams</h1>
+          <ul>
+            <li><a href="parser.html">Parser-Regeln</a></li>
+            <li><a href="lexer.html">Lexer-Regeln</a></li>
+          </ul>
+          </body></html>
+          EOF
 
       - name: Stand des Commits mitschreiben
         if: steps.compare.outputs.changed == 'true'
         run: |
-          echo "Grammatik-Commit: ${{ steps.current.outputs.sha }}" >> site/index.html
-          echo "Erzeugt am: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> site/index.html
+          info="<p>Grammatik-Commit: ${{ steps.current.outputs.sha }}<br>Erzeugt am: $(date -u +%Y-%m-%dT%H:%M:%SZ)</p>"
+          sed -i "s#</body>#${info}</body>#" site/index.html
 
       - name: last_sha.txt aktualisieren und committen
         if: steps.compare.outputs.changed == 'true'
