@@ -29,7 +29,13 @@ jobs:
       - name: Aktuelle Version von kebnf ermitteln
         id: kebnf_version
         run: |
-          version=$(curl -s https://crates.io/api/v1/crates/nomograph-kebnf | jq -r '.crate.newest_version')
+          response=$(curl -s -A "oose-sysml-railroad-diagram-workflow (github.com/oose/SysML-2-Utilities)" https://crates.io/api/v1/crates/nomograph-kebnf)
+          version=$(echo "$response" | jq -r '.crate.newest_version')
+          if [ -z "$version" ] || [ "$version" = "null" ]; then
+            echo "Konnte Version nicht ermitteln, Antwort von crates.io:"
+            echo "$response"
+            exit 1
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: kebnf aus Cache wiederherstellen
