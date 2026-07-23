@@ -1,0 +1,125 @@
+name: sysml-railroad-diagram
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'   # täglich 06:00 UTC
+  workflow_dispatch:        # manuelles Auslösen zum Testen
+
+permissions:
+  contents: write   # zum Committen der last_sha.txt
+  pages: write       # zum Veröffentlichen auf GitHub Pages
+  id-token: write    # von deploy-pages benötigt
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  check-and-build:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.compare.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Letzten bekannten Commit lesen
+        id: last
+        run: echo "sha=$(cat last_sha.txt 2>/dev/null || echo none)" >> "$GITHUB_OUTPUT"
+
+      - name: Aktuellen Commit der Grammatik abfragen
+        id: current
+        run: |
+          sha=$(curl -s "https://api.github.com/repos/antlr/grammars-v4/commits?path=sysml-v2&sha=master&per_page=1" | jq -r '.[0].sha')
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Vergleichen
+        id: compare
+        run: |
+          if [ "${{ steps.current.outputs.sha }}" != "${{ steps.last.outputs.sha }}" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Java einrichten
+        if: steps.compare.outputs.changed == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: rrd-antlr4 aus Cache laden oder bauen
+        if: steps.compare.outputs.changed == 'true'
+        id: rrd
+        run: |
+          mkdir -p tools
+          if [ -f tools/rrd-antlr4.jar ]; then
+            echo "cached=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git clone --depth 1 https://github.com/bkiers/rrd-antlr4.git rrd-src
+          cd rrd-src
+          mvn -q -DskipTests clean package
+          cp target/rrd-antlr4-*.jar ../tools/rrd-antlr4.jar
+
+      - name: rrd-antlr4-Build cachen
+        if: steps.compare.outputs.changed == 'true'
+        uses: actions/cache@v4
+        with:
+          path: tools/rrd-antlr4.jar
+          key: rrd-antlr4-jar-v1
+
+      - name: SysML-v2-Grammatik herunterladen
+        if: steps.compare.outputs.changed == 'true'
+        run: |
+          mkdir -p grammar
+          curl -sf -o grammar/SysMLv2Lexer.g4 \
+            "https://raw.githubusercontent.com/antlr/grammars-v4/${{ steps.current.outputs.sha }}/sysml-v2/SysMLv2Lexer.g4"
+          curl -sf -o grammar/SysMLv2Parser.g4 \
+            "https://raw.githubusercontent.com/antlr/grammars-v4/${{ steps.current.outputs.sha }}/sysml-v2/SysMLv2Parser.g4"
+
+      - name: Railroad-Diagramm erzeugen
+        if: steps.compare.outputs.changed == 'true'
+        run: |
+          cd grammar
+          java -jar ../tools/rrd-antlr4.jar SysMLv2Parser.g4 SysMLv2Lexer.g4
+          mkdir -p ../site
+          cp -r output/SysMLv2Parser/* ../site/
+
+      - name: Stand des Commits mitschreiben
+        if: steps.compare.outputs.changed == 'true'
+        run: |
+          echo "Grammatik-Commit: ${{ steps.current.outputs.sha }}" >> site/index.html
+          echo "Erzeugt am: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> site/index.html
+
+      - name: last_sha.txt aktualisieren und committen
+        if: steps.compare.outputs.changed == 'true'
+        run: |
+          echo "${{ steps.current.outputs.sha }}" > last_sha.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add last_sha.txt
+          git commit -m "Update SysML v2 grammar snapshot to ${{ steps.current.outputs.sha }}"
+          git push
+
+      - name: Pages vorbereiten
+        if: steps.compare.outputs.changed == 'true'
+        uses: actions/configure-pages@v5
+
+      - name: Artefakt hochladen
+        if: steps.compare.outputs.changed == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    if: needs.check-and-build.outputs.changed == 'true'
+    needs: check-and-build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Auf GitHub Pages veröffentlichen
+        id: deployment
+        uses: actions/deploy-pages@v4
