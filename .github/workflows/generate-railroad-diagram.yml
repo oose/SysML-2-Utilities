@@ -1,21 +1,19 @@
-
-Sysml railroad diagram · YML
 name: sysml-railroad-diagram
- 
+
 on:
   schedule:
     - cron: '0 6 * * 1'   # wöchentlich, montags 06:00 UTC
   workflow_dispatch:        # manuelles Auslösen zum Testen
- 
+
 permissions:
   contents: write   # zum Committen der last_sha.txt
   pages: write       # zum Veröffentlichen auf GitHub Pages
   id-token: write    # von deploy-pages benötigt
- 
+
 concurrency:
   group: pages
   cancel-in-progress: false
- 
+
 jobs:
   check-and-build:
     runs-on: ubuntu-latest
@@ -23,17 +21,17 @@ jobs:
       changed: ${{ steps.compare.outputs.changed }}
     steps:
       - uses: actions/checkout@v4
- 
+
       - name: Letzten bekannten Commit lesen
         id: last
         run: echo "sha=$(cat last_sha.txt 2>/dev/null || echo none)" >> "$GITHUB_OUTPUT"
- 
+
       - name: Aktuellen Commit der Grammatik abfragen
         id: current
         run: |
           sha=$(curl -s "https://api.github.com/repos/antlr/grammars-v4/commits?path=sysml-v2&sha=master&per_page=1" | jq -r '.[0].sha')
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
- 
+
       - name: Vergleichen
         id: compare
         run: |
@@ -42,14 +40,14 @@ jobs:
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
- 
+
       - name: Java einrichten
         if: steps.compare.outputs.changed == 'true'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
- 
+
       - name: Aktuelle Versionen von ebnf-convert und rr ermitteln
         if: steps.compare.outputs.changed == 'true'
         id: tool_versions
@@ -58,14 +56,14 @@ jobs:
           rr_version=$(curl -s https://repo1.maven.org/maven2/de/bottlecaps/rr/rr-webapp/maven-metadata.xml | grep -oPm1 '(?<=<release>)[^<]+')
           echo "ec_version=$ec_version" >> "$GITHUB_OUTPUT"
           echo "rr_version=$rr_version" >> "$GITHUB_OUTPUT"
- 
+
       - name: Tool-Downloads aus Cache wiederherstellen
         if: steps.compare.outputs.changed == 'true'
         uses: actions/cache@v4
         with:
           path: tools
           key: bottlecaps-tools-${{ steps.tool_versions.outputs.ec_version }}-${{ steps.tool_versions.outputs.rr_version }}
- 
+
       - name: ebnf-convert.war und rr.war herunterladen (falls nicht im Cache)
         if: steps.compare.outputs.changed == 'true'
         run: |
@@ -78,7 +76,7 @@ jobs:
             "https://repo1.maven.org/maven2/de/bottlecaps/rr/rr-webapp/${{ steps.tool_versions.outputs.rr_version }}/rr-webapp-${{ steps.tool_versions.outputs.rr_version }}.war"
           ln -sf "$(basename "$ec")" tools/ebnf-convert.war
           ln -sf "$(basename "$rr")" tools/rr.war
- 
+
       - name: SysML-v2-Grammatik herunterladen
         if: steps.compare.outputs.changed == 'true'
         run: |
@@ -87,7 +85,7 @@ jobs:
             "https://raw.githubusercontent.com/antlr/grammars-v4/${{ steps.current.outputs.sha }}/sysml-v2/SysMLv2Lexer.g4"
           curl -sf -o grammar/SysMLv2Parser.g4 \
             "https://raw.githubusercontent.com/antlr/grammars-v4/${{ steps.current.outputs.sha }}/sysml-v2/SysMLv2Parser.g4"
- 
+
       - name: Railroad-Diagramm erzeugen
         if: steps.compare.outputs.changed == 'true'
         run: |
@@ -97,24 +95,24 @@ jobs:
           java -jar ../tools/ebnf-convert.war SysMLv2Lexer.g4 > lexer.ebnf
           java -jar ../tools/rr.war -html -out:../site/parser.html parser.ebnf
           java -jar ../tools/rr.war -html -out:../site/lexer.html lexer.ebnf
-          cat > ../site/index.html <<'EOF'
-          <!doctype html>
-          <html><head><meta charset="utf-8"><title>SysML v2 Grammar Railroad Diagrams</title></head>
-          <body>
-          <h1>SysML v2 Grammar Railroad Diagrams</h1>
-          <ul>
-            <li><a href="parser.html">Parser-Regeln</a></li>
-            <li><a href="lexer.html">Lexer-Regeln</a></li>
-          </ul>
-          </body></html>
-          EOF
- 
+          {
+            printf '%s\n' '<!doctype html>'
+            printf '%s\n' '<html><head><meta charset="utf-8"><title>SysML v2 Grammar Railroad Diagrams</title></head>'
+            printf '%s\n' '<body>'
+            printf '%s\n' '<h1>SysML v2 Grammar Railroad Diagrams</h1>'
+            printf '%s\n' '<ul>'
+            printf '%s\n' '  <li><a href="parser.html">Parser-Regeln</a></li>'
+            printf '%s\n' '  <li><a href="lexer.html">Lexer-Regeln</a></li>'
+            printf '%s\n' '</ul>'
+            printf '%s\n' '</body></html>'
+          } > ../site/index.html
+
       - name: Stand des Commits mitschreiben
         if: steps.compare.outputs.changed == 'true'
         run: |
           info="<p>Grammatik-Commit: ${{ steps.current.outputs.sha }}<br>Erzeugt am: $(date -u +%Y-%m-%dT%H:%M:%SZ)</p>"
           sed -i "s#</body>#${info}</body>#" site/index.html
- 
+
       - name: last_sha.txt aktualisieren und committen
         if: steps.compare.outputs.changed == 'true'
         run: |
@@ -124,17 +122,17 @@ jobs:
           git add last_sha.txt
           git commit -m "Update SysML v2 grammar snapshot to ${{ steps.current.outputs.sha }}"
           git push
- 
+
       - name: Pages vorbereiten
         if: steps.compare.outputs.changed == 'true'
         uses: actions/configure-pages@v5
- 
+
       - name: Artefakt hochladen
         if: steps.compare.outputs.changed == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: site
- 
+
   deploy:
     if: needs.check-and-build.outputs.changed == 'true'
     needs: check-and-build
@@ -146,4 +144,3 @@ jobs:
       - name: Auf GitHub Pages veröffentlichen
         id: deployment
         uses: actions/deploy-pages@v4
- 
