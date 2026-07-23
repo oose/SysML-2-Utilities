@@ -106,13 +106,13 @@ jobs:
           } > SysMLv2Combined.g4
 
           java -jar ../tools/ebnf-convert.war SysMLv2Combined.g4 > combined.ebnf
-          java -jar ../tools/rr.war -html -out:../site/index.html combined.ebnf
+          java -jar ../tools/rr.war -html -out:"../site/SysML2-textual notation.html" combined.ebnf
 
       - name: Stand des Commits mitschreiben
         if: steps.compare.outputs.changed == 'true'
         run: |
           info="<p>Grammatik-Commit: ${{ steps.current.outputs.sha }}<br>Erzeugt am: $(date -u +%Y-%m-%dT%H:%M:%SZ)</p>"
-          sed -i "s#</body>#${info}</body>#" site/index.html
+          sed -i "s#</body>#${info}</body>#" "site/SysML2-textual notation.html"
 
       - name: last_sha.txt aktualisieren und committen
         if: steps.compare.outputs.changed == 'true'
