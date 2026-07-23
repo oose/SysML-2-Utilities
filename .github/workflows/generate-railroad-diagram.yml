@@ -112,12 +112,14 @@ jobs:
           kebnf "$kerml_file" --format antlr4 -o grammar/KerML.g4
           kebnf "$kerml_file" "$sysml_file" --format antlr4 -o grammar/SysML.g4
 
-      - name: Datum der Original-KEBNF-Datei ermitteln
+      - name: Datum der Original-KEBNF-Dateien ermitteln
         if: steps.compare.outputs.changed == 'true'
         id: spec_date
         run: |
-          date=$(curl -s "https://api.github.com/repos/Systems-Modeling/SysML-v2-Release/commits?path=bnf/SysML-textual-bnf.kebnf&per_page=1" | jq -r '.[0].commit.committer.date')
-          echo "date=$date" >> "$GITHUB_OUTPUT"
+          kerml_date=$(curl -s "https://api.github.com/repos/Systems-Modeling/SysML-v2-Release/commits?path=bnf/KerML-textual-bnf.kebnf&per_page=1" | jq -r '.[0].commit.committer.date')
+          sysml_date=$(curl -s "https://api.github.com/repos/Systems-Modeling/SysML-v2-Release/commits?path=bnf/SysML-textual-bnf.kebnf&per_page=1" | jq -r '.[0].commit.committer.date')
+          echo "kerml_date=$kerml_date" >> "$GITHUB_OUTPUT"
+          echo "sysml_date=$sysml_date" >> "$GITHUB_OUTPUT"
 
       - name: Railroad-Diagramme erzeugen
         if: steps.compare.outputs.changed == 'true'
@@ -134,10 +136,12 @@ jobs:
       - name: Datum oben rechts einfügen
         if: steps.compare.outputs.changed == 'true'
         run: |
-          readable_date=$(LC_TIME=C date -u -d "${{ steps.spec_date.outputs.date }}" +"%B %Y")
-          info="<div style=\"text-align:right;margin-bottom:1em;font-family:sans-serif;font-size:0.85em;color:#666;\">Status: ${readable_date}</div>"
-          sed -i "0,/<body[^>]*>/s||&${info}|" "site/KerML 1 - textual notation.html"
-          sed -i "0,/<body[^>]*>/s||&${info}|" "site/SysML 2 - textual notation.html"
+          kerml_readable_date=$(LC_TIME=C date -u -d "${{ steps.spec_date.outputs.kerml_date }}" +"%B %Y")
+          sysml_readable_date=$(LC_TIME=C date -u -d "${{ steps.spec_date.outputs.sysml_date }}" +"%B %Y")
+          kerml_info="<div style=\"text-align:right;margin-bottom:1em;font-family:sans-serif;font-size:0.85em;color:#666;\">Status: ${kerml_readable_date}</div>"
+          sysml_info="<div style=\"text-align:right;margin-bottom:1em;font-family:sans-serif;font-size:0.85em;color:#666;\">Status: ${sysml_readable_date}</div>"
+          sed -i "0,/<body[^>]*>/s||&${kerml_info}|" "site/KerML 1 - textual notation.html"
+          sed -i "0,/<body[^>]*>/s||&${sysml_info}|" "site/SysML 2 - textual notation.html"
 
       - name: last_spec_hash.txt aktualisieren und committen
         if: steps.compare.outputs.changed == 'true'
