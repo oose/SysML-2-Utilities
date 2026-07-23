@@ -128,8 +128,8 @@ jobs:
           java -jar ../tools/ebnf-convert.war SysML.g4 > sysml.ebnf
           java -jar ../tools/rr.war -html -suppressebnf -out:"../site/KerML 1 - textual notation.html" kerml.ebnf
           java -jar ../tools/rr.war -html -suppressebnf -color:#7B83DF -out:"../site/SysML 2 - textual notation.html" sysml.ebnf
-          sed -i "0,/<title>[^<]*<\/title>/s##<title>KerML</title>#" "../site/KerML 1 - textual notation.html"
-          sed -i "0,/<title>[^<]*<\/title>/s##<title>SysML</title>#" "../site/SysML 2 - textual notation.html"
+          sed -i "0,/<head>/s#<head>#<head><title>KerML</title>#" "../site/KerML 1 - textual notation.html"
+          sed -i "0,/<head>/s#<head>#<head><title>SysML</title>#" "../site/SysML 2 - textual notation.html"
 
       - name: Datum oben rechts einfügen
         if: steps.compare.outputs.changed == 'true'
