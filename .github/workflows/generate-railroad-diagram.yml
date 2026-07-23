@@ -6,7 +6,7 @@ on:
   workflow_dispatch:        # manuelles Auslösen zum Testen
 
 permissions:
-  contents: write   # zum Committen der last_sha.txt
+  contents: write   # zum Committen des last_spec_hash.txt
   pages: write       # zum Veröffentlichen auf GitHub Pages
   id-token: write    # von deploy-pages benötigt
 
@@ -22,23 +22,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Letzten bekannten Commit lesen
+      - name: Letzten bekannten Spec-Hash lesen
         id: last
-        run: echo "sha=$(cat last_sha.txt 2>/dev/null || echo none)" >> "$GITHUB_OUTPUT"
+        run: echo "hash=$(cat last_spec_hash.txt 2>/dev/null || echo none)" >> "$GITHUB_OUTPUT"
 
-      - name: Aktuellen Commit der Grammatik abfragen
-        id: current
+      - name: Aktuelle Version von kebnf ermitteln
+        id: kebnf_version
         run: |
-          response=$(curl -s "https://api.github.com/repos/antlr/grammars-v4/commits?path=sysml-v2&sha=master&per_page=1")
-          sha=$(echo "$response" | jq -r '.[0].sha')
-          date=$(echo "$response" | jq -r '.[0].commit.committer.date')
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
-          echo "date=$date" >> "$GITHUB_OUTPUT"
+          version=$(curl -s https://crates.io/api/v1/crates/nomograph-kebnf | jq -r '.crate.newest_version')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: kebnf aus Cache wiederherstellen
+        id: kebnf_cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/kebnf
+          key: kebnf-${{ steps.kebnf_version.outputs.version }}
+
+      - name: kebnf installieren (falls nicht im Cache)
+        if: steps.kebnf_cache.outputs.cache-hit != 'true'
+        run: cargo install nomograph-kebnf --version ${{ steps.kebnf_version.outputs.version }}
+
+      - name: Aktuelle KerML/SysML-v2-Spec holen
+        id: fetch
+        run: |
+          kebnf --fetch-spec
+          current_hash=$(find ~/.cache/kebnf -type f -name '*.kebnf' | sort | xargs sha256sum | sha256sum | cut -d' ' -f1)
+          echo "hash=$current_hash" >> "$GITHUB_OUTPUT"
 
       - name: Vergleichen
         id: compare
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ steps.current.outputs.sha }}" != "${{ steps.last.outputs.sha }}" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ steps.fetch.outputs.hash }}" != "${{ steps.last.outputs.hash }}" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -80,52 +95,50 @@ jobs:
           ln -sf "$(basename "$ec")" tools/ebnf-convert.war
           ln -sf "$(basename "$rr")" tools/rr.war
 
-      - name: SysML-v2-Grammatik herunterladen
+      - name: ANTLR4-Grammatiken mit kebnf erzeugen
         if: steps.compare.outputs.changed == 'true'
         run: |
           mkdir -p grammar
-          curl -sf -o grammar/SysMLv2Lexer.g4 \
-            "https://raw.githubusercontent.com/antlr/grammars-v4/${{ steps.current.outputs.sha }}/sysml-v2/SysMLv2Lexer.g4"
-          curl -sf -o grammar/SysMLv2Parser.g4 \
-            "https://raw.githubusercontent.com/antlr/grammars-v4/${{ steps.current.outputs.sha }}/sysml-v2/SysMLv2Parser.g4"
+          kerml_file=$(find ~/.cache/kebnf -iname '*kerml*.kebnf' | head -n1)
+          sysml_file=$(find ~/.cache/kebnf -iname '*sysml*.kebnf' | head -n1)
+          echo "KerML-Datei: $kerml_file"
+          echo "SysML-Datei: $sysml_file"
+          kebnf "$kerml_file" --format antlr4 -o grammar/KerML.g4
+          kebnf "$kerml_file" "$sysml_file" --format antlr4 -o grammar/SysML.g4
 
-      - name: Grammatik zusammenführen und Railroad-Diagramm erzeugen
+      - name: Datum der Original-KEBNF-Datei ermitteln
+        if: steps.compare.outputs.changed == 'true'
+        id: spec_date
+        run: |
+          date=$(curl -s "https://api.github.com/repos/Systems-Modeling/SysML-v2-Release/commits?path=bnf/SysML-textual-bnf.kebnf&per_page=1" | jq -r '.[0].commit.committer.date')
+          echo "date=$date" >> "$GITHUB_OUTPUT"
+
+      - name: Railroad-Diagramme erzeugen
         if: steps.compare.outputs.changed == 'true'
         run: |
           cd grammar
           mkdir -p ../site
+          java -jar ../tools/ebnf-convert.war KerML.g4 > kerml.ebnf
+          java -jar ../tools/ebnf-convert.war SysML.g4 > sysml.ebnf
+          java -jar ../tools/rr.war -html -suppressebnf -color:#7B83DF -out:"../site/KerML - textual notation.html" kerml.ebnf
+          java -jar ../tools/rr.war -html -suppressebnf -color:#7B83DF -out:"../site/SysML 2 - textual notation.html" sysml.ebnf
 
-          # Grammatik-Header entfernen, damit aus Lexer- und Parser-Datei eine
-          # kombinierte ANTLR4-Grammatik wird (Regel-Referenzen bleiben dadurch verlinkt)
-          sed -i -E '/^(lexer |parser )?grammar [A-Za-z0-9_]+;$/d' SysMLv2Parser.g4
-          sed -i -E '/^(lexer |parser )?grammar [A-Za-z0-9_]+;$/d' SysMLv2Lexer.g4
-          # der tokenVocab-Options-Block ist in einer kombinierten Grammatik überflüssig
-          perl -0777 -pi -e 's/options\s*\{[^}]*\}//s' SysMLv2Parser.g4
-
-          {
-            echo 'grammar SysMLv2;'
-            cat SysMLv2Parser.g4
-            cat SysMLv2Lexer.g4
-          } > SysMLv2Combined.g4
-
-          java -jar ../tools/ebnf-convert.war SysMLv2Combined.g4 > combined.ebnf
-          java -jar ../tools/rr.war -html -suppressebnf -color:#7B83DF -out:"../site/SysML 2 - textual notation.html" combined.ebnf
-
-      - name: Datum der Quelldatei oben rechts einfügen
+      - name: Datum oben rechts einfügen
         if: steps.compare.outputs.changed == 'true'
         run: |
-          readable_date=$(LC_TIME=C date -u -d "${{ steps.current.outputs.date }}" +"%B %Y")
+          readable_date=$(LC_TIME=C date -u -d "${{ steps.spec_date.outputs.date }}" +"%B %Y")
           info="<div style=\"text-align:right;margin-bottom:1em;font-family:sans-serif;font-size:0.85em;color:#666;\">Status: ${readable_date}</div>"
+          sed -i "0,/<body[^>]*>/s||&${info}|" "site/KerML - textual notation.html"
           sed -i "0,/<body[^>]*>/s||&${info}|" "site/SysML 2 - textual notation.html"
 
-      - name: last_sha.txt aktualisieren und committen
+      - name: last_spec_hash.txt aktualisieren und committen
         if: steps.compare.outputs.changed == 'true'
         run: |
-          echo "${{ steps.current.outputs.sha }}" > last_sha.txt
+          echo "${{ steps.fetch.outputs.hash }}" > last_spec_hash.txt
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add last_sha.txt
-          git diff --staged --quiet || git commit -m "Update SysML v2 grammar snapshot to ${{ steps.current.outputs.sha }}"
+          git add last_spec_hash.txt
+          git diff --staged --quiet || git commit -m "Update KerML/SysML v2 spec snapshot to ${{ steps.fetch.outputs.hash }}"
           git push
 
       - name: Pages vorbereiten
